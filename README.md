@@ -4,31 +4,50 @@ A simple log monitoring tool that scans log files for errors and sends email not
 
 **VGX Consulting - Log Monitoring Solution**
 
+Version: 1.2.4
+
 ## Features
 
-- Scans multiple log files for error patterns
+- Recursively scans all .log files in configured directory
 - Tracks last check time to only scan new content (efficient)
 - Sends email notifications via SMTP when errors are detected
-- Logs all notifications to a file for reference
-- Configurable error patterns
-- Secure credential management via environment variables
+- Optional debug mode with detailed logging to notification file
+- Configurable via config file or environment variables
+- Smart writable directory detection (falls back to /tmp if needed)
+- Automatic exclusion of notification log from monitoring
 
 ## Requirements
 
-- Python 3
-- Access to an SMTP server (like SMTP2GO)
+- Python 3.6+
+- Access to an SMTP server with SSL support (port 465)
+- Standard Python libraries: os, re, ssl, time, smtplib, argparse, configparser, datetime, email, pathlib, glob
 
 ## Setup
 
 1. Clone or copy the `log_monitor.py` script to your server
-2. Copy the `log_monitor.conf` sample file to your working directory and edit it with your SMTP credentials (see Configuration below)
-3. Alternatively, set up environment variables for SMTP credentials instead of using the config file
-4. Make the script executable: `chmod +x log_monitor.py`
+2. Make the script executable: `chmod +x log_monitor.py`
+3. Configure using either:
+   - Create `log_monitor.conf` in the directory where you'll run the script (recommended)
+   - Set environment variables (see Configuration below)
+4. Test the script: `./log_monitor.py --debug`
 5. Add to your crontab to run periodically:
 
 ```bash
 # Run every 5 minutes (make sure to cd to the directory with log_monitor.conf first)
 */5 * * * * cd /home/vijendra/logs && /usr/bin/python3 /home/vijendra/logs/log_monitor.py
+```
+
+## Usage
+
+```bash
+# Normal mode (silent unless errors found)
+./log_monitor.py
+
+# Debug mode (detailed logging to notifications.log)
+./log_monitor.py --debug
+
+# Show version
+./log_monitor.py --version
 ```
 
 ## Configuration
@@ -41,11 +60,9 @@ The script can be configured in three ways (in order of priority):
 
 ### Option 1: Configuration File (Recommended)
 
-Create a `log_monitor.conf` file in the **current directory** where you run the script from. The script automatically looks for this file at startup.
+Create a `log_monitor.conf` file in the **current directory** where you run the script from. The script automatically looks for this file at startup using `os.getcwd()`.
 
 **Important:** The config file must be in your current working directory when you execute the script. For cron jobs, this is typically your home directory unless you `cd` to another location first.
-
-A sample configuration file has been provided at `/home/vijendra/logs/log_monitor.conf`.
 
 Edit `log_monitor.conf`:
 
@@ -59,27 +76,38 @@ from_email = your_from_email@domain.com
 to_email = your_notification_email@domain.com
 
 [Paths]
-# Optional path overrides
-# log_dir = /home/vijendra/logs
-# cron_dir = /home/vijendra/logs/cron
+# Optional: Override default log directory (default: /home/vijendra/logs)
+log_dir = /home/vijendra/logs
+
+# Optional: Override notification file location
+# notification_file = /path/to/notifications.log
+
+# Optional: Override last check timestamp file location
+# last_check_file = /path/to/.last_check
 ```
 
 **Benefits:**
 - Easy to manage all settings in one place
 - No need to set environment variables
-- Can be version controlled (if kept secure)
+- Can be version controlled (if credentials kept secure)
 
 ### Option 2: Environment Variables
 
-Set the following environment variables for SMTP authentication:
+Environment variables override config file settings. Use the `VGX_LM_` prefix:
 
+**SMTP Settings:**
 ```bash
-export SMTP_USERNAME="your_smtp_username"
-export SMTP_PASSWORD="your_smtp_password"
-export SMTP_FROM_EMAIL="your_from_email@domain.com"
-export SMTP_TO_EMAIL="your_notification_email@domain.com"  # Optional
-export SMTP_SERVER="mail.smtp2go.com"  # Optional, defaults to mail.smtp2go.com
-export SMTP_PORT="465"  # Optional, defaults to 465
+export VGX_LM_SMTP_SERVER="mail.smtp2go.com"
+export VGX_LM_SMTP_PORT="465"
+export VGX_LM_SMTP_USERNAME="your_smtp_username"
+export VGX_LM_SMTP_PASSWORD="your_smtp_password"
+export VGX_LM_SMTP_FROM="your_from_email@domain.com"
+export VGX_LM_SMTP_TO="your_notification_email@domain.com"
+```
+
+**Path Settings:**
+```bash
+export VGX_LM_LOG_DIR="/home/vijendra/logs"
 ```
 
 Add these to your `~/.bashrc`, `~/.profile`, or `/etc/environment` for persistence.
@@ -87,9 +115,10 @@ Add these to your `~/.bashrc`, `~/.profile`, or `/etc/environment` for persisten
 For cron jobs, you can set them in the crontab:
 
 ```bash
-SMTP_USERNAME=your_smtp_username
-SMTP_PASSWORD=your_smtp_password
-SMTP_FROM_EMAIL=your_from_email@domain.com
+VGX_LM_SMTP_USERNAME=your_smtp_username
+VGX_LM_SMTP_PASSWORD=your_smtp_password
+VGX_LM_SMTP_FROM=your_from_email@domain.com
+VGX_LM_SMTP_TO=your_notification_email@domain.com
 */5 * * * * /usr/bin/python3 /path/to/log_monitor.py
 ```
 
