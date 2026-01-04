@@ -4,7 +4,15 @@ A simple log monitoring tool that scans log files for errors and sends email not
 
 **VGX Consulting - Log Monitoring Solution**
 
-Version: 1.2.4
+Version: 1.3.0
+
+## Version 1.3.0 Updates
+
+- **Performance Enhancements**:
+    - Combined all error patterns into a single, highly optimized regular expression for faster scanning.
+    - Introduced concurrent processing to scan multiple log files in parallel, significantly improving performance for environments with many log files.
+- **Improved Code Structure**:
+    - Refactored configuration loading into a centralized method, enhancing code readability and maintainability.
 
 ## Features
 

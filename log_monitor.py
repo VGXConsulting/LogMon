@@ -17,47 +17,27 @@ import time
 import smtplib
 import argparse
 import configparser
+import concurrent.futures
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from glob import glob
 
-__version__ = "1.2.4"
+__version__ = "1.3.0"
 
 
 class LogMonitor:
     def __init__(self, debug=False):
         # Debug mode flag
         self.debug = debug
-
         if self.debug:
             print("=" * 60)
             print("VGX Log Monitor - Debug Mode")
             print("=" * 60)
 
-        # Load configuration from file if it exists
-        self.config = self.load_config()
-
-        # Directory settings (environment variables override config file)
-        self.log_dir = os.getenv('VGX_LM_LOG_DIR') or self.config.get('Paths', 'log_dir', fallback="/home/vijendra/logs")
-
-        if self.debug:
-            print(f"Log directory: {self.log_dir}")
-
-        # Get script directory for state files
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        writable_dir = self._get_writable_directory(script_dir)
-
-        self.notification_file = self.config.get('Paths', 'notification_file',
-                                                 fallback=os.path.join(writable_dir, 'notifications.log'))
-        self.last_check_file = self.config.get('Paths', 'last_check_file',
-                                               fallback=os.path.join(writable_dir, '.last_check'))
-
-        if self.debug:
-            print(f"State directory: {writable_dir}")
-            print(f"Notification file: {self.notification_file}")
-            print(f"Last check file: {self.last_check_file}")
+        # Load configuration and initialize attributes
+        self._configure()
 
         # Error patterns to look for in logs
         self.error_patterns = [
@@ -67,15 +47,53 @@ class LogMonitor:
             r'exit code', r'returned non-zero', r'aborted', r'killed'
         ]
 
-        # Compile regex patterns for efficiency
-        self.compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.error_patterns]
+        # Combine patterns into a single regex for efficiency
+        combined_pattern = '|'.join(self.error_patterns)
+        self.compiled_pattern = re.compile(combined_pattern, re.IGNORECASE)
 
         if self.debug:
-            print(f"Monitoring {len(self.error_patterns)} error patterns")
+            print(f"Monitoring with combined regex pattern")
 
         # Create notification file if it doesn't exist (only in debug mode)
         if self.debug:
             Path(self.notification_file).touch(exist_ok=True)
+
+    def _configure(self):
+        """Load configuration from file and environment, then set attributes."""
+        config = configparser.ConfigParser()
+        config_file = os.path.join(os.getcwd(), 'log_monitor.conf')
+        if os.path.exists(config_file):
+            config.read(config_file)
+            if self.debug:
+                print(f"Loaded config file: {config_file}")
+        else:
+            if self.debug:
+                print(f"No config file found at: {config_file}")
+
+        # Directory settings
+        self.log_dir = os.getenv('VGX_LM_LOG_DIR') or config.get('Paths', 'log_dir', fallback="/home/vijendra/logs")
+        if self.debug:
+            print(f"Log directory: {self.log_dir}")
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        writable_dir = self._get_writable_directory(script_dir)
+
+        self.notification_file = config.get('Paths', 'notification_file', fallback=os.path.join(writable_dir, 'notifications.log'))
+        self.last_check_file = config.get('Paths', 'last_check_file', fallback=os.path.join(writable_dir, '.last_check'))
+
+        if self.debug:
+            print(f"State directory: {writable_dir}")
+            print(f"Notification file: {self.notification_file}")
+            print(f"Last check file: {self.last_check_file}")
+
+        # SMTP settings
+        self.smtp_server = os.getenv('VGX_LM_SMTP_SERVER') or config.get('SMTP', 'server', fallback='mail.smtp2go.com')
+        self.smtp_port = int(os.getenv('VGX_LM_SMTP_PORT') or config.get('SMTP', 'port', fallback='465'))
+        self.smtp_username = os.getenv('VGX_LM_SMTP_USERNAME') or config.get('SMTP', 'username', fallback=None)
+        self.smtp_password = os.getenv('VGX_LM_SMTP_PASSWORD') or config.get('SMTP', 'password', fallback=None)
+        self.smtp_from_email = os.getenv('VGX_LM_SMTP_FROM') or config.get('SMTP', 'from_email', fallback=None)
+        self.smtp_to_email = os.getenv('VGX_LM_SMTP_TO') or config.get('SMTP', 'to_email', fallback=None)
+
 
     def _get_writable_directory(self, preferred_dir):
         """Determine writable directory for state files."""
@@ -89,19 +107,6 @@ class LogMonitor:
             fallback_dir = '/tmp/vgx.logmonitor'
             os.makedirs(fallback_dir, exist_ok=True)
             return fallback_dir
-
-    def load_config(self):
-        """Load configuration from config file in current directory"""
-        config = configparser.ConfigParser()
-        config_file = os.path.join(os.getcwd(), 'log_monitor.conf')
-        if os.path.exists(config_file):
-            config.read(config_file)
-            if self.debug:
-                print(f"Loaded config file: {config_file}")
-        else:
-            if self.debug:
-                print(f"No config file found at: {config_file}")
-        return config
 
     def get_log_files(self):
         """Get all .log files recursively in log_dir, excluding notification file"""
@@ -149,7 +154,7 @@ class LogMonitor:
         try:
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 for i, line in enumerate(f, 1):
-                    if any(pattern.search(line) for pattern in self.compiled_patterns):
+                    if self.compiled_pattern.search(line):
                         errors.append({
                             'file': filepath,
                             'line_number': i,
@@ -163,7 +168,7 @@ class LogMonitor:
         return errors
 
     def scan_all_logs(self):
-        """Scan all log files for errors"""
+        """Scan all log files for errors using a thread pool."""
         current_time = time.time()
         last_check = self.get_last_check_time()
 
@@ -181,14 +186,22 @@ class LogMonitor:
             print("\nScanning log files for errors...")
 
         all_errors = []
-        for log_file in self.get_log_files():
-            if self.debug:
-                print(f"  Scanning: {log_file}")
-            errors = self.find_errors_in_file(log_file, last_check)
-            if errors:
-                if self.debug:
-                    print(f"    Found {len(errors)} error(s)")
-            all_errors.extend(errors)
+        log_files = self.get_log_files()
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Create a future for each log file scan
+            future_to_file = {executor.submit(self.find_errors_in_file, log_file, last_check): log_file for log_file in log_files}
+            for future in concurrent.futures.as_completed(future_to_file):
+                log_file = future_to_file[future]
+                try:
+                    errors = future.result()
+                    if errors:
+                        if self.debug:
+                            print(f"    Found {len(errors)} error(s) in {log_file}")
+                        all_errors.extend(errors)
+                except Exception as exc:
+                    if self.debug:
+                        print(f"{log_file} generated an exception: {exc}")
 
         self.set_last_check_time(current_time)
 
@@ -239,44 +252,37 @@ class LogMonitor:
     def send_email_notification(self, message, error_count):
         """Send email notification via SMTP"""
         try:
-            smtp_server = os.getenv('VGX_LM_SMTP_SERVER') or self.config.get('SMTP', 'server', fallback='mail.smtp2go.com')
-            smtp_port = int(os.getenv('VGX_LM_SMTP_PORT') or self.config.get('SMTP', 'port', fallback='465'))
-            username = os.getenv('VGX_LM_SMTP_USERNAME') or self.config.get('SMTP', 'username', fallback=None)
-            password = os.getenv('VGX_LM_SMTP_PASSWORD') or self.config.get('SMTP', 'password', fallback=None)
-            from_email = os.getenv('VGX_LM_SMTP_FROM') or self.config.get('SMTP', 'from_email', fallback=None)
-            to_email = os.getenv('VGX_LM_SMTP_TO') or self.config.get('SMTP', 'to_email', fallback=None)
-
             if self.debug:
                 print(f"\nAttempting to send email notification...")
-                print(f"  SMTP Server: {smtp_server}:{smtp_port}")
-                print(f"  From: {from_email}")
-                print(f"  To: {to_email}")
-                print(f"  Username: {username}")
+                print(f"  SMTP Server: {self.smtp_server}:{self.smtp_port}")
+                print(f"  From: {self.smtp_from_email}")
+                print(f"  To: {self.smtp_to_email}")
+                print(f"  Username: {self.smtp_username}")
 
-            if not all([username, password, from_email, to_email]):
+            if not all([self.smtp_username, self.smtp_password, self.smtp_from_email, self.smtp_to_email]):
                 raise ValueError("Missing SMTP credentials")
 
             msg = MIMEMultipart()
-            msg['From'] = from_email
-            msg['To'] = to_email
+            msg['From'] = self.smtp_from_email
+            msg['To'] = self.smtp_to_email
             msg['Subject'] = f"Log Monitor Alert: {error_count} errors detected"
             msg.attach(MIMEText(message, 'plain'))
 
             if self.debug:
-                print(f"  Connecting to {smtp_server}...")
+                print(f"  Connecting to {self.smtp_server}...")
 
             context = ssl.create_default_context()
-            with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
+            with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, context=context) as server:
                 if self.debug:
                     print(f"  Logging in...")
-                server.login(username, password)
+                server.login(self.smtp_username, self.smtp_password)
                 if self.debug:
                     print(f"  Sending message...")
-                server.sendmail(from_email, to_email, msg.as_string())
+                server.sendmail(self.smtp_from_email, self.smtp_to_email, msg.as_string())
 
             if self.debug:
-                print(f"  ✓ Email sent successfully to {to_email}")
-            self.log_notification(f"Email sent to {to_email}")
+                print(f"  ✓ Email sent successfully to {self.smtp_to_email}")
+            self.log_notification(f"Email sent to {self.smtp_to_email}")
 
         except Exception as e:
             error_msg = f"Failed to send email: {str(e)}"
