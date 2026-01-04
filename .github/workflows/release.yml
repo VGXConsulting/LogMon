@@ -1,0 +1,90 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.1.0, v2.0.0, etc.
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Standalone Executable
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --name log_monitor log_monitor.py
+
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+    - name: Verify executable
+      run: |
+        chmod +x dist/log_monitor
+        ./dist/log_monitor --version
+        ls -lh dist/log_monitor
+
+    - name: Create release package
+      run: |
+        mkdir -p release_package
+        cp dist/log_monitor release_package/
+        cp log_monitor.conf.example release_package/
+        cd release_package
+        tar -czf ../log_monitor-v${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz *
+        cd ..
+        ls -lh log_monitor-v${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz
+
+    - name: Create Release and Upload Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        files: log_monitor-v${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz
+        body: |
+          ## Log Monitor v${{ steps.get_version.outputs.VERSION }}
+
+          Standalone executable for Linux x86_64 - no Python installation required.
+
+          ### Quick Start
+          ```bash
+          # Download and extract
+          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/log_monitor-v${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz
+          tar -xzf log_monitor-v${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz
+
+          # Configure
+          mv log_monitor.conf.example log_monitor.conf
+          # Edit log_monitor.conf with your settings
+
+          # Run
+          chmod +x log_monitor
+          ./log_monitor
+          ```
+
+          ### What's Included
+          - `log_monitor` - Standalone executable (~7.6 MB, includes Python runtime)
+          - `log_monitor.conf.example` - Example configuration file
+          - No external dependencies required
+
+          See [DEPLOYMENT.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/DEPLOYMENT.md) for detailed deployment instructions.
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: log_monitor-v${{ steps.get_version.outputs.VERSION }}
+        path: dist/log_monitor
+        retention-days: 90

@@ -1,0 +1,49 @@
+# Log Monitor - Git Ignore File
+# VGX Consulting - Log Monitoring Solution
+
+# Configuration with secrets
+log_monitor.conf
+
+# Runtime log files
+*.log
+!README.md
+
+# Runtime state files
+.last_check
+
+# Cron logs directory
+cron/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+build_env/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.backup

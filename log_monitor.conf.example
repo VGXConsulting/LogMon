@@ -1,0 +1,31 @@
+# Log Monitor Configuration File - Example
+# VGX Consulting - Log Monitoring Solution
+# Copyright (c) 2026 VGX Consulting. All rights reserved.
+#
+# Copy this file to 'log_monitor.conf' and update with your settings:
+#   cp log_monitor.conf.example log_monitor.conf
+#
+# Note: Environment variables (VGX_LM_*) will override settings in this file
+
+[SMTP]
+# SMTP server settings for email notifications
+# Can be overridden with environment variables:
+#   VGX_LM_SMTP_SERVER, VGX_LM_SMTP_PORT, VGX_LM_SMTP_USERNAME,
+#   VGX_LM_SMTP_PASSWORD, VGX_LM_SMTP_FROM, VGX_LM_SMTP_TO
+server = smtp.example.com
+port = 465
+username = your_smtp_username
+password = your_smtp_password
+from_email = monitoring@example.com
+to_email = admin@example.com
+
+[Paths]
+# Directory containing log files to monitor (scans recursively for *.log files)
+# Can be overridden with environment variable: VGX_LM_LOG_DIR
+# Uncomment and modify if you need a different path
+# log_dir = /var/log/yourapp
+#
+# NOTE: notification_file and last_check_file default to script directory
+# (falls back to /tmp/vgx.logmonitor if script directory is not writable)
+# notification_file = <script_dir>/notifications.log
+# last_check_file = <script_dir>/.last_check

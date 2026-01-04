@@ -1,0 +1,9 @@
+# Log Monitor - Python Dependencies
+# VGX Consulting - Log Monitoring Solution
+
+# Runtime Dependencies: NONE
+# Uses only Python standard library modules (os, re, sys, ssl, time, smtplib,
+# argparse, subprocess, configparser, datetime, email, pathlib)
+
+# Build Dependencies (for creating standalone executable)
+pyinstaller>=6.0.0
