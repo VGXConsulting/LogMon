@@ -24,7 +24,7 @@ from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from glob import glob
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 
 class LogMonitor:
@@ -34,6 +34,7 @@ class LogMonitor:
         if self.debug:
             print("=" * 60)
             print("VGX Log Monitor - Debug Mode")
+            print(f"Run started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("=" * 60)
 
         # Load configuration and initialize attributes
@@ -66,6 +67,14 @@ class LogMonitor:
             config.read(config_file)
             if self.debug:
                 print(f"Loaded config file: {config_file}")
+                print("Configuration overrides from file:")
+                for section in config.sections():
+                    print(f"  [{section}]")
+                    for key, value in config.items(section):
+                        # Mask password for security
+                        if 'password' in key.lower():
+                            value = '********'
+                        print(f"    {key} = {value}")
         else:
             if self.debug:
                 print(f"No config file found at: {config_file}")
@@ -308,6 +317,7 @@ class LogMonitor:
         if self.debug:
             print("\n" + "=" * 60)
             print("Log monitor completed")
+            print(f"Run finished at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print("=" * 60)
 
 
