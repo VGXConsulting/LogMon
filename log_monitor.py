@@ -24,7 +24,7 @@ from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from glob import glob
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 
 
 class LogMonitor:
